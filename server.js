@@ -23,24 +23,31 @@ let latestData = {
   distance2: null,
   averageDistance: null,
   fillPercent: null,
+  temperature: null,
+  humidity: null,
+  gasRaw: null,
+  weightRaw: null,
   timestamp: null
 };
 
-// Health check for Render
 app.get("/", (req, res) => {
   res.send("SmartBin Cloud API is running!");
 });
 
-// ESP32 sends sensor readings here
 app.post("/api/bin", (req, res) => {
   const {
     deviceId,
     distance1,
     distance2,
     averageDistance,
-    fillPercent
+    fillPercent,
+    temperature,
+    humidity,
+    gasRaw,
+    weightRaw
   } = req.body;
 
+  // Keep the required distance validation.
   if (
     ![distance1, distance2, averageDistance, fillPercent]
       .every(Number.isFinite) ||
@@ -53,12 +60,35 @@ app.post("/api/bin", (req, res) => {
     });
   }
 
+  // Optional readings can be null while sensors are unavailable.
+  const optionalValues = {
+    temperature,
+    humidity,
+    gasRaw,
+    weightRaw
+  };
+
+  for (const [key, value] of Object.entries(optionalValues)) {
+    if (value !== undefined &&
+        value !== null &&
+        !Number.isFinite(value)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid ${key} reading`
+      });
+    }
+  }
+
   latestData = {
     deviceId: deviceId || "SMART_BIN_01",
     distance1,
     distance2,
     averageDistance,
     fillPercent,
+    temperature: temperature ?? null,
+    humidity: humidity ?? null,
+    gasRaw: gasRaw ?? null,
+    weightRaw: weightRaw ?? null,
     timestamp: new Date().toISOString()
   };
 
@@ -68,19 +98,17 @@ app.post("/api/bin", (req, res) => {
 
   res.json({
     success: true,
-    message: "SmartBin data received"
+    message: "SmartBin data received",
+    data: latestData
   });
 });
 
-// Return the latest reading
 app.get("/api/bin", (req, res) => {
   res.json(latestData);
 });
 
-// React clients receive updates in real time
 io.on("connection", (socket) => {
   console.log("Dashboard connected:", socket.id);
-
   socket.emit("binData", latestData);
 
   socket.on("disconnect", () => {
